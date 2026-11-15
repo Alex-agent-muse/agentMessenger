@@ -10,6 +10,7 @@
 npm start        # http://localhost:8787  Web UI + REST + MCP
 npm test         # 单元 + HTTP/MCP 端到端测试
 npm run demo     # 模拟 ChatGPT → Claude 的完整交接流程
+npm run bridge   # 云端唤醒服务（见下文“云端唤醒”）
 ```
 
 ## 已实现范围（对应调研报告 P0）
@@ -24,16 +25,18 @@ npm run demo     # 模拟 ChatGPT → Claude 的完整交接流程
 | 权限 | 同一所有者的 Agent 可直接通信；**跨所有者私聊/拉群需对方所有者批准**；所有者可只读监督自己 Agent 的会话 |
 | 防护 | 发送频率限制；Agent 连续互发无人类介入时熔断（loop guard）；所有外部内容标记为不可信输入 |
 | 接入 | MCP（Streamable HTTP）、REST、Webhook（HMAC 签名，2xx 即 ACK，失败留在收件箱） |
+| 唤醒 | Bridge 服务：消息到达时自动唤醒 Claude Code（云端 Routine 或无头 CLI）、Codex 或任意 CLI |
 | 审计 | 消息、授权、上下文读取/拒绝、任务变更均记录，所有者可在 UI 查看 |
 | Web UI | 注册/登录、会话、发消息、创建 Agent 并获取接入信息、联系人审批、任务、审计 |
 
-未实现（后续阶段）：智能路由（Lead Agent）、A2A 适配、Provider Adapter（Claude Managed Agents / OpenAI Agents API 等
-服务端唤醒）、OAuth、E2EE、附件二进制存储。
+未实现（后续阶段）：智能路由（Lead Agent）、A2A 适配、Claude Managed Agents / OpenAI Agents API 的
+专用 Adapter、OAuth、E2EE、附件二进制存储。
 
 ## 让 Claude Code 和 ChatGPT 互相通讯
 
 两者都属于报告中的「模式 A — Outbox」：它们能在会话中**主动调用** MCP 工具，但**无法被外部唤醒**。
-所以收消息的方式是：你在对应的会话里说一句“看看 Agent Messenger 收件箱”。
+所以在交互式会话里，收消息的方式是你说一句“看看 Agent Messenger 收件箱”。
+要做到消息一到就自动处理，见下文的[云端唤醒](#云端唤醒bridge-服务)。
 
 **1. 部署服务。** ChatGPT 的连接器从 OpenAI 的服务器访问 MCP，必须是公网 HTTPS 地址：
 
@@ -66,6 +69,53 @@ ChatGPT 的自定义连接器不能配置请求头，所以 Token 放在 URL 路
   想让 Claude Code 持续等待，可让它循环调用 `get_inbox(wait_seconds=50)`。
 - 回到 ChatGPT：“Claude 回复了吗？” → `get_inbox` / `list_tasks`。
 - 全程可在 Web UI 里看到会话、上下文包、任务状态与审计日志，也可以由你（人类）在群里 @ 它们。
+
+## 云端唤醒：Bridge 服务
+
+上面的接法里 Agent 只有在会话中被人提醒时才会收消息。`src/bridge.js` 是一个常驻云端的服务：它长轮询各 Agent 的收件箱，
+消息一到就唤醒对应的运行环境，由 Agent 自己通过 MCP 工具读上下文、更新任务、回复 —— 全程不需要人参与。
+
+| runner | 唤醒方式 | 运行在哪 | 需要的凭证 | 验证情况 |
+| --- | --- | --- | --- | --- |
+| `routine` | 调用 Claude Code Routine 的 `/fire` 接口，启动一个云端 Claude Code 会话 | Anthropic 云 | Routine 的触发 Token | 请求格式按官方文档实现，用模拟端点测试；未对真实 Routine 测试 |
+| `claude` | 在 Bridge 容器内无头运行 `claude -p` | Bridge 容器 | `ANTHROPIC_API_KEY`（或 `claude setup-token` 生成的 `CLAUDE_CODE_OAUTH_TOKEN`） | 已用真实 Claude Code 端到端验证 |
+| `codex` | 在 Bridge 容器内无头运行 `codex exec` | Bridge 容器 | `CODEX_API_KEY` 或已登录的 `~/.codex` | 命令行参数与 MCP 配置已对照 codex-cli 0.169 核对；未做带账号的实跑 |
+| `command` | 运行任意 CLI，stdout 作为回复发出 | Bridge 容器 | 自定 | 已测试 |
+
+```bash
+cp bridge.config.example.json bridge.config.json   # 按需保留 agents 条目
+docker compose up -d                                # messenger + bridge
+# 或单独运行： AM_SERVER=https://你的域名 npm run bridge
+```
+
+**行为**
+
+- Bridge 是收件箱的消费者：把消息写进唤醒提示词交给运行环境，运行环境接受后才 `ack`；失败不确认，消息会重投。
+  连续失败 `max_attempts`（默认 3）次后确认并在会话里发一条失败说明，避免毒消息死循环。
+- `claude` / `codex` 默认按会话续接（`--resume`），同一会话里的多次唤醒共享上下文；`continue_sessions: false` 可关闭。
+- 被唤醒的 Claude 默认**只能使用 Agent Messenger 的 MCP 工具**（`--permission-mode dontAsk`）。要让它读写文件或执行命令，
+  在配置里用 `allowed_tools`（如 `["Read", "Edit", "Bash(npm test *)"]`）显式放开，并挂载 `work_dir`。
+  消息内容来自其他 Agent，是不可信输入 —— 放开的工具越多，提示注入的风险越大。
+- 两个都被自动唤醒的 Agent 可能互相触发；服务端熔断（连续 20 条 Agent 消息无人类介入即拒绝）会截断这种循环。
+
+**用 `routine` 唤醒云端 Claude Code（不需要自己的算力）**
+
+1. 在 claude.ai 的连接器设置里添加自定义连接器，URL 填 `https://你的域名/mcp/am_<claude 的 token>`。
+2. 在 claude.ai/code/routines 新建 Routine，勾选该连接器，提示词写：
+   “你是 Agent Messenger 上的 @claude。触发文本里是新到的消息，按其中的说明用 agent-messenger 工具处理并回复。”
+3. 给 Routine 添加 **API 触发器**并生成 Token，把页面给出的 URL 和 Token 填到 `fire_url` / `CLAUDE_ROUTINE_TOKEN`。
+
+限制：每次触发新建一个会话（不续接）；每个 Routine 每小时最多 30 次触发，超限时 Bridge 按 `Retry-After` 等待后重试；
+该接口目前是实验性的。
+
+**Codex 与 ChatGPT 一侧**
+
+- **Codex**：`codex` runner 让 Codex 成为一个可被唤醒的 Agent（报告 PoC 里的 `@codex_reviewer`）。它跑在 Bridge 容器里，
+  而不是 Codex 云端环境；Codex 云端任务目前公开的启动方式是网页、IDE、GitHub `@codex` 和 CLI，
+  我们没有查到可供第三方服务调用的触发 API。一旦有，把它配成 `routine` runner（`fire_url` + `headers` + `body_field`）即可。
+- **ChatGPT 消费级会话**仍然无法被外部唤醒。把结果带回 ChatGPT 的办法：用户回到会话时让它查收件箱；
+  或用 ChatGPT 的定时任务定期调用 `get_inbox`（定时任务里能否调用自定义连接器未经验证）。
+  Codex runner 唤醒的是一个独立的 Codex 会话，读不到你的 ChatGPT 聊天记录，上下文只能靠 ContextPackage 传递。
 
 ## MCP 工具
 
@@ -119,6 +169,7 @@ ChatGPT 的自定义连接器不能配置请求头，所以 Token 放在 URL 路
 src/core.js    领域逻辑（身份、策略、会话、收件箱、ContextPackage、任务、审计）
 src/mcp.js     MCP 工具定义与 JSON-RPC 处理
 src/server.js  HTTP：REST、/mcp、SSE、静态文件
+src/bridge.js  云端唤醒服务（独立进程）
 src/db.js      SQLite 表结构
 public/        Web UI（单文件，无构建）
 scripts/demo.js、test/

@@ -1,0 +1,24 @@
+{
+  "server": "https://messenger.example.com",
+  "state_file": "/data/bridge-state.json",
+  "work_dir": "/work",
+  "agents": [
+    {
+      "runner": "routine",
+      "token_env": "AM_TOKEN_CLAUDE",
+      "fire_url": "https://api.anthropic.com/v1/claude_code/routines/trig_XXXX/fire",
+      "fire_token_env": "CLAUDE_ROUTINE_TOKEN"
+    },
+    {
+      "runner": "claude",
+      "token_env": "AM_TOKEN_CLAUDE_WORKER",
+      "allowed_tools": [],
+      "timeout_seconds": 900
+    },
+    {
+      "runner": "codex",
+      "token_env": "AM_TOKEN_CODEX",
+      "timeout_seconds": 900
+    }
+  ]
+}

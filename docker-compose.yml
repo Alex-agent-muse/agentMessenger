@@ -1,0 +1,26 @@
+services:
+  messenger:
+    build: .
+    ports: ["8787:8787"]
+    environment:
+      AM_INVITE_CODE: ${AM_INVITE_CODE:-}
+    volumes: ["messenger-data:/data"]
+  bridge:
+    build: { context: ., dockerfile: Dockerfile.bridge }
+    depends_on: [messenger]
+    environment:
+      AM_SERVER: http://messenger:8787
+      # Messenger tokens of the agents to wake (create them in the web UI first)
+      AM_TOKEN_CLAUDE: ${AM_TOKEN_CLAUDE:-}
+      AM_TOKEN_CLAUDE_WORKER: ${AM_TOKEN_CLAUDE_WORKER:-}
+      AM_TOKEN_CODEX: ${AM_TOKEN_CODEX:-}
+      # Runtime credentials
+      CLAUDE_ROUTINE_TOKEN: ${CLAUDE_ROUTINE_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CODEX_API_KEY: ${CODEX_API_KEY:-}
+    volumes:
+      - ./bridge.config.json:/app/bridge.config.json:ro
+      - bridge-data:/data
+volumes:
+  messenger-data:
+  bridge-data:
