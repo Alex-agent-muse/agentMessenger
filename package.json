@@ -1,0 +1,13 @@
+{
+  "name": "agent-messenger",
+  "version": "0.1.0",
+  "description": "Agent × Human Messenger MVP: identities, DM/group chat, @routing, reliable inbox, ContextPackage handoff, tasks — over REST, MCP and webhooks.",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/demo.js"
+  }
+}

@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Messenger</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --line: #e3e6ea; --text: #1c2330; --muted: #6b7482;
+    --accent: #3b5bdb; --accent-soft: #e7ecff; --agent: #7048e8; --agent-soft: #f0ebff;
+    --ok: #2b8a3e; --warn: #c2620a; --bad: #c92a2a; --mine: #e7f0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151a; --panel: #1a1f27; --line: #2b323d; --text: #e6e9ee; --muted: #8f99a8;
+      --accent: #7c96ff; --accent-soft: #232c4d; --agent: #b197fc; --agent-soft: #2a2343;
+      --ok: #69db7c; --warn: #ffa94d; --bad: #ff8787; --mine: #1f2a44;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body, #root { height: 100%; margin: 0; }
+  body { font: 14px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { white-space: nowrap; cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 10px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { border: 0; background: none; padding: 0; color: var(--accent); }
+  input, select, textarea { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 8px; width: 100%; }
+  h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
+  .muted { color: var(--muted); } .small { font-size: 12px; }
+  .row { display: flex; gap: 6px; align-items: center; } .grow { flex: 1; min-width: 0; }
+  .stack > * + * { margin-top: 8px; }
+
+  #auth { max-width: 380px; margin: 10vh auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  #auth h1 { margin: 0 0 4px; font-size: 20px; }
+  #app { display: grid; grid-template-columns: 260px minmax(0, 1fr) 340px; height: 100%; }
+  #app > * { min-height: 0; }
+  aside { background: var(--panel); display: flex; flex-direction: column; }
+  #left { border-right: 1px solid var(--line); } #right { border-left: 1px solid var(--line); }
+  .head { padding: 12px; border-bottom: 1px solid var(--line); }
+  .scroll { overflow-y: auto; flex: 1; }
+  .conv { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .conv:hover, .conv.active { background: var(--accent-soft); }
+  .conv .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: 11px; line-height: 18px; background: var(--accent-soft); color: var(--accent); }
+  .badge.agent { background: var(--agent-soft); color: var(--agent); }
+  .badge.unread { background: var(--bad); color: #fff; }
+  .badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
+
+  main { display: flex; flex-direction: column; min-width: 0; }
+  #msgs { flex: 1; overflow-y: auto; padding: 16px; }
+  .msg { max-width: 760px; margin: 0 0 12px; }
+  .msg .who { font-size: 12px; margin-bottom: 2px; }
+  .msg .body { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.mine { margin-left: auto; } .msg.mine .body { background: var(--mine); }
+  .card { border-left: 3px solid var(--agent); }
+  .card .title { font-weight: 600; }
+  .mention { color: var(--accent); font-weight: 600; }
+  #composer { padding: 12px; border-top: 1px solid var(--line); background: var(--panel); display: flex; gap: 8px; }
+  #composer textarea { resize: none; height: 44px; }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; border: 0; border-radius: 0; border-bottom: 2px solid transparent; padding: 10px 4px; background: none; }
+  .tabs button.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .pane { padding: 12px; }
+  .item { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 8px; display: none; max-width: 90vw; }
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 1fr; grid-auto-rows: minmax(0, auto); height: auto; }
+    aside .scroll { max-height: 40vh; } main { height: 70vh; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toast"></div>
+<script>
+'use strict';
+// --- tiny DOM helper: everything is built with textContent, never innerHTML (messages are untrusted) ---
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (v !== false && v != null) el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) el.append(kid);
+  return el;
+}
+const store = {
+  get() { try { return localStorage.getItem('am_token'); } catch { return null; } },
+  set(v) { try { v ? localStorage.setItem('am_token', v) : localStorage.removeItem('am_token'); } catch {} },
+};
+const S = { token: store.get(), me: null, convs: [], current: null, msgs: [], tab: 'agents', agents: [], contacts: [], tasks: [], audit: [], reveal: null };
+const root = document.getElementById('root');
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = 'none'), 5000);
+}
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method, headers: { 'content-type': 'application/json', ...(S.token && { authorization: 'Bearer ' + S.token }) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(json.message || json.error || res.statusText); e.code = json.error; throw e; }
+  return json;
+}
+const act = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+const time = (iso) => new Date(iso).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const convTitle = (c) => c.kind === 'group' ? c.title
+  : c.members.filter((m) => m.id !== S.me.id).map((m) => '@' + m.handle).join(' ↔ ') || '(空)';
+
+// ---------- auth ----------
+function renderAuth() {
+  const handle = h('input', { placeholder: 'handle，例如 alice（a-z 0-9 _）' });
+  const name = h('input', { placeholder: '显示名称（可选）' });
+  const invite = h('input', { placeholder: '邀请码（若服务器要求）' });
+  const token = h('input', { placeholder: 'am_...', type: 'password' });
+  root.replaceChildren(h('div', { id: 'auth', class: 'stack' },
+    h('h1', {}, 'Agent Messenger'),
+    h('div', { class: 'muted' }, '人类与 AI Agent 的统一通讯录、单聊、群聊与上下文交接。'),
+    h('h3', { style: 'margin-top:16px' }, '注册'),
+    handle, name, invite,
+    h('button', { class: 'primary', onclick: act(async () => {
+      const r = await api('POST', '/api/register', { handle: handle.value, display_name: name.value, invite_code: invite.value });
+      S.reveal = { title: '你的登录 Token（仅显示一次，请保存）', token: r.token };
+      await login(r.token);
+    }) }, '创建账号'),
+    h('h3', { style: 'margin-top:16px' }, '或用 Token 登录'),
+    token,
+    h('button', { onclick: act(() => login(token.value.trim())) }, '登录'),
+  ));
+}
+async function login(token) {
+  S.token = token;
+  try { S.me = await api('GET', '/api/me'); } catch (e) { S.token = null; store.set(null); renderAuth(); throw e; }
+  store.set(token);
+  connectEvents();
+  await refresh();
+}
+function logout() { store.set(null); location.reload(); }
+
+// ---------- data ----------
+let es;
+function connectEvents() {
+  if (es) es.close();
+  es = new EventSource('/api/events?token=' + encodeURIComponent(S.token));
+  es.onmessage = () => refresh().catch(() => {});
+}
+async function refresh() {
+  [S.convs, S.agents, S.contacts] = await Promise.all([
+    api('GET', '/api/conversations'), api('GET', '/api/agents'), api('GET', '/api/contacts'),
+  ]);
+  if (S.current && !S.convs.some((c) => c.id === S.current)) S.current = null;
+  if (!S.current && S.convs.length) S.current = S.convs[0].id;
+  if (S.current) {
+    S.msgs = await api('GET', `/api/conversations/${S.current}/messages?limit=200`);
+    const c = S.convs.find((x) => x.id === S.current);
+    if (c.unread) { await api('POST', '/api/inbox/ack', { conversation_id: S.current }); c.unread = 0; }
+  } else S.msgs = [];
+  if (S.tab === 'tasks') S.tasks = await api('GET', '/api/tasks' + (S.current ? '?conversation_id=' + S.current : ''));
+  if (S.tab === 'audit') S.audit = await api('GET', '/api/audit?limit=80');
+  render();
+}
+
+// ---------- render ----------
+function render() {
+  const msgsEl = document.getElementById('msgs');
+  const stick = !msgsEl || msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+  const draft = document.querySelector('#composer textarea')?.value || '';
+  const hadFocus = document.activeElement?.closest?.('#composer');
+  root.replaceChildren(h('div', { id: 'app' }, renderLeft(), renderMain(draft), renderRight()));
+  const m = document.getElementById('msgs');
+  if (m && stick) m.scrollTop = m.scrollHeight;
+  if (hadFocus) document.querySelector('#composer textarea')?.focus();
+}
+
+function renderLeft() {
+  return h('aside', { id: 'left' },
+    h('div', { class: 'head stack' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' }, h('b', {}, S.me.display_name), h('span', { class: 'muted' }, ' @' + S.me.handle)),
+        h('button', { class: 'link small', onclick: logout }, '退出')),
+      h('div', { class: 'row' },
+        h('button', { class: 'grow', onclick: act(newDm) }, '+ 私聊'),
+        h('button', { class: 'grow', onclick: act(newGroup) }, '+ 群聊'))),
+    h('div', { class: 'scroll' },
+      S.convs.length ? S.convs.map((c) => h('div', {
+        class: 'conv' + (c.id === S.current ? ' active' : ''),
+        onclick: act(async () => { S.current = c.id; await refresh(); }),
+      },
+        h('div', { class: 'row' },
+          h('div', { class: 't grow' }, (c.kind === 'group' ? '# ' : '') + convTitle(c)),
+          c.unread ? h('span', { class: 'badge unread' }, String(c.unread)) : null),
+        h('div', { class: 's muted small' }, c.last_message ? `@${c.last_message.sender.handle}: ${c.last_message.text}` : '暂无消息'),
+      )) : h('div', { class: 'empty' }, '还没有会话。先在右侧创建 Agent，或发起私聊。')));
+}
+
+function richText(text) {
+  return text.split(/(@[a-zA-Z0-9_]+)/g).map((part, i) => i % 2 ? h('span', { class: 'mention' }, part) : part);
+}
+const STATUS = { pending: ['待处理', 'warn'], accepted: ['已接受', ''], in_progress: ['进行中', ''], needs_input: ['需要补充', 'warn'], completed: ['已完成', 'ok'], failed: ['失败', 'bad'], cancelled: ['已取消', 'bad'] };
+const statusBadge = (s) => h('span', { class: 'badge ' + STATUS[s][1] }, STATUS[s][0]);
+
+function renderMessage(m) {
+  const mine = m.sender.id === S.me.id;
+  let body;
+  if (m.kind === 'context' && m.context) {
+    const detail = h('div', {});
+    body = h('div', { class: 'body card' },
+      h('div', { class: 'row' }, h('span', { class: 'badge agent' }, `上下文包 v${m.context.version}`),
+        m.context.revoked ? h('span', { class: 'badge bad' }, '已撤销') : null),
+      h('div', { class: 'title' }, m.context.task_goal),
+      h('div', { class: 'row small' },
+        h('button', { class: 'link', onclick: act(async () => {
+          const c = await api('GET', '/api/contexts/' + m.context.context_id);
+          detail.replaceChildren(h('pre', {}, JSON.stringify(c, null, 2)));
+        }) }, '查看内容'),
+        mine || S.agents.some((a) => a.id === m.sender.id) ? h('button', { class: 'link', onclick: act(async () => {
+          if (confirm('撤销后接收方将无法再读取，确定？')) { await api('POST', `/api/contexts/${m.context.context_id}/revoke`); await refresh(); }
+        }) }, '撤销授权') : null,
+        h('span', { class: 'muted' }, '有效期至 ' + time(m.context.expires_at))),
+      detail);
+  } else if (m.kind === 'task' && m.task) {
+    body = h('div', { class: 'body card' },
+      h('div', { class: 'row' }, h('span', { class: 'badge agent' }, '任务'), statusBadge(m.task.status),
+        h('span', { class: 'muted small' }, `@${m.task.creator} → @${m.task.assignee}`)),
+      h('div', {}, richText(m.text.replace(/^\[Task \S+\] /, ''))));
+  } else body = h('div', { class: 'body' }, richText(m.text));
+  return h('div', { class: 'msg' + (mine ? ' mine' : '') },
+    h('div', { class: 'who' },
+      h('b', {}, m.sender.display_name), ' ',
+      h('span', { class: 'badge' + (m.sender.kind === 'agent' ? ' agent' : '') }, m.sender.kind === 'agent' ? 'Agent' : '人类'),
+      h('span', { class: 'muted' }, ` @${m.sender.handle} · ${time(m.created_at)}`)),
+    body);
+}
+
+function renderMain(draft) {
+  const c = S.convs.find((x) => x.id === S.current);
+  if (!c) return h('main', {}, h('div', { class: 'empty' }, '选择或创建一个会话'));
+  const isMember = c.members.some((m) => m.id === S.me.id);
+  const canPost = isMember || c.kind === 'group';
+  const input = h('textarea', { placeholder: canPost ? '输入消息，用 @handle 提及成员；Enter 发送，Shift+Enter 换行' : '这是你的 Agent 之间的私聊（只读监督）', disabled: !canPost });
+  input.value = draft;
+  const sendNow = act(async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try { await api('POST', '/api/messages', { to: c.id, text }); } catch (e) { input.value = text; throw e; }
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendNow(); } });
+  return h('main', {},
+    h('div', { class: 'head row' },
+      h('div', { class: 'grow' },
+        h('b', {}, (c.kind === 'group' ? '# ' : '') + convTitle(c)),
+        h('div', { class: 'muted small' },
+          c.members.map((m) => '@' + m.handle).join('、'),
+          c.kind === 'group' ? ` · 路由：${c.routing_mode === 'all' ? '全部响应' : '@提及'}` : '')),
+      c.kind === 'group' ? h('button', { onclick: act(async () => {
+        const handle = prompt('邀请谁？输入 handle');
+        if (handle) await api('POST', `/api/conversations/${c.id}/members`, { handle });
+      }) }, '邀请成员') : null),
+    h('div', { id: 'msgs' }, S.msgs.length ? S.msgs.map(renderMessage) : h('div', { class: 'empty' }, '暂无消息')),
+    h('div', { id: 'composer' }, input, h('button', { class: 'primary', onclick: sendNow, disabled: !canPost }, '发送')));
+}
+
+async function newDm() {
+  const handle = prompt('对方的 handle（人类或 Agent）');
+  if (!handle) return;
+  const text = prompt('第一条消息');
+  if (!text) return;
+  const m = await api('POST', '/api/messages', { to: '@' + handle.replace(/^@/, ''), text });
+  S.current = m.conversation_id;
+  await refresh();
+}
+async function newGroup() {
+  const title = prompt('群名称');
+  if (!title) return;
+  const members = (prompt('成员 handle，逗号分隔（可留空稍后邀请）') || '').split(/[,，\s]+/).filter(Boolean);
+  const all = confirm('路由模式：点“确定”= 全部响应（每条消息通知所有成员）；点“取消”= 仅 @提及（推荐）');
+  const g = await api('POST', '/api/conversations', { title, members, routing_mode: all ? 'all' : 'mention' });
+  S.current = g.id;
+  await refresh();
+}
+
+// ---------- right panel ----------
+function renderRight() {
+  const pending = S.contacts.filter((c) => c.direction === 'incoming' && c.status === 'pending').length;
+  const tabs = [['agents', '我的 Agent'], ['contacts', '联系人' + (pending ? ` (${pending})` : '')], ['tasks', '任务'], ['audit', '审计']];
+  const panes = { agents: paneAgents, contacts: paneContacts, tasks: paneTasks, audit: paneAudit };
+  return h('aside', { id: 'right' },
+    h('div', { class: 'tabs' }, tabs.map(([k, label]) => h('button', {
+      class: S.tab === k ? 'active' : '', onclick: act(async () => { S.tab = k; await refresh(); }),
+    }, label))),
+    h('div', { class: 'scroll pane stack' }, panes[S.tab]()));
+}
+
+function connectHelp(r) {
+  const origin = location.origin;
+  return h('div', { class: 'item stack' },
+    h('b', {}, r.title),
+    h('pre', {}, r.token),
+    r.handle ? [
+      h('div', { class: 'small' }, h('b', {}, 'ChatGPT'), '（设置 → 连接器 → 开发者模式 → 新建连接器，认证选“无”）MCP 服务器 URL：'),
+      h('pre', {}, `${origin}/mcp/${r.token}`),
+      h('div', { class: 'small' }, h('b', {}, 'Claude Code'), '：'),
+      h('pre', {}, `claude mcp add --transport http agent-messenger ${origin}/mcp --header "Authorization: Bearer ${r.token}"`),
+      h('div', { class: 'small muted' }, 'ChatGPT 需要公网 HTTPS 地址；本地运行时请先用隧道（如 cloudflared）暴露本服务。URL 中包含密钥，请勿公开。'),
+      r.webhook_secret ? h('div', { class: 'small' }, 'Webhook 签名密钥：', h('code', {}, r.webhook_secret)) : null,
+    ] : null,
+    h('button', { class: 'link small', onclick: () => { S.reveal = null; render(); } }, '我已保存，关闭'));
+}
+
+function paneAgents() {
+  const handle = h('input', { placeholder: 'handle，例如 chatgpt' });
+  const name = h('input', { placeholder: '显示名称（可选）' });
+  const runtime = h('select', {}, ['chatgpt', 'claude-code', 'claude.ai', 'gemini', 'custom'].map((r) => h('option', {}, r)));
+  const hook = h('input', { placeholder: 'Webhook URL（可选，开发者 Agent 推送）' });
+  return [
+    S.reveal ? connectHelp(S.reveal) : null,
+    h('h3', {}, '我的 Agent'),
+    S.agents.length ? S.agents.map((a) => h('div', { class: 'item' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' }, h('b', {}, a.display_name), h('span', { class: 'muted' }, ' @' + a.handle)),
+        h('span', { class: 'badge agent' }, a.runtime || 'agent')),
+      h('div', { class: 'row small' },
+        h('span', { class: 'muted grow' }, a.last_seen_at ? '最近活跃 ' + time(a.last_seen_at) : '尚未连接'),
+        h('button', { class: 'link', onclick: act(async () => {
+          if (!confirm(`重置 @${a.handle} 的 Token？旧 Token 立即失效。`)) return;
+          const r = await api('POST', `/api/agents/${a.id}/token`);
+          S.reveal = { title: `@${a.handle} 的新 Token（仅显示一次）`, token: r.token, handle: a.handle };
+          render();
+        }) }, '重置 Token')),
+    )) : h('div', { class: 'muted' }, '还没有 Agent。创建两个（例如 chatgpt 和 claude），分别接入后它们即可互发消息。'),
+    h('h3', { style: 'margin-top:16px' }, '新建 Agent'),
+    handle, name, runtime, hook,
+    h('button', { class: 'primary', onclick: act(async () => {
+      const r = await api('POST', '/api/agents', { handle: handle.value, display_name: name.value, runtime: runtime.value, webhook_url: hook.value || undefined });
+      S.reveal = { title: `@${r.agent.handle} 的 Token（仅显示一次）`, token: r.token, handle: r.agent.handle, webhook_secret: hook.value ? r.webhook_secret : null };
+      await refresh();
+    }) }, '创建并获取接入信息'),
+  ];
+}
+
+function paneContacts() {
+  const handle = h('input', { placeholder: '对方 handle' });
+  const label = { pending: '待批准', accepted: '已通过', rejected: '已拒绝' };
+  return [
+    h('div', { class: 'muted small' }, '同一所有者的 Agent 可直接通信；跨所有者的私聊/拉群需要对方所有者批准。'),
+    h('div', { class: 'row' }, handle, h('button', { onclick: act(async () => {
+      await api('POST', '/api/contacts', { handle: handle.value }); await refresh();
+    }) }, '申请')),
+    S.contacts.length ? S.contacts.map((c) => h('div', { class: 'item' },
+      h('div', { class: 'row' },
+        h('div', { class: 'grow' }, c.direction === 'incoming' ? `@${c.requester} 请求联系你` : `你请求联系 @${c.target}`),
+        h('span', { class: 'badge ' + ({ accepted: 'ok', rejected: 'bad', pending: 'warn' })[c.status] }, label[c.status])),
+      h('div', { class: 'muted small' }, `发起者 @${c.requested_by} · ${time(c.created_at)}`),
+      c.direction === 'incoming' && c.status !== 'accepted' ? h('div', { class: 'row', style: 'margin-top:6px' },
+        h('button', { class: 'primary', onclick: act(async () => { await api('POST', `/api/contacts/${c.id}/decision`, { accept: true }); await refresh(); }) }, '批准'),
+        c.status === 'pending' ? h('button', { onclick: act(async () => { await api('POST', `/api/contacts/${c.id}/decision`, { accept: false }); await refresh(); }) }, '拒绝') : null) : null,
+    )) : h('div', { class: 'muted' }, '暂无联系人请求'),
+  ];
+}
+
+function paneTasks() {
+  return S.tasks.length ? S.tasks.map((t) => {
+    const detail = h('div', {});
+    return h('div', { class: 'item' },
+      h('div', { class: 'row' }, h('b', { class: 'grow' }, t.title), statusBadge(t.status)),
+      h('div', { class: 'muted small' }, `@${t.creator} → @${t.assignee} · ${time(t.updated_at)}`),
+      h('div', { class: 'row small' },
+        t.result || t.instructions ? h('button', { class: 'link', onclick: () => detail.replaceChildren(
+          t.instructions ? h('pre', {}, '要求：\n' + t.instructions) : '', t.result ? h('pre', {}, '结果：\n' + t.result) : '') }, '详情') : null,
+        !['completed', 'cancelled'].includes(t.status) ? h('button', { class: 'link', onclick: act(async () => {
+          await api('PATCH', '/api/tasks/' + t.task_id, { status: 'cancelled' }); await refresh();
+        }) }, '取消') : null,
+        ['failed', 'needs_input'].includes(t.status) ? h('button', { class: 'link', onclick: act(async () => {
+          await api('PATCH', '/api/tasks/' + t.task_id, { status: 'pending' }); await refresh();
+        }) }, '重试') : null),
+      detail);
+  }) : [h('div', { class: 'muted' }, '当前会话没有任务。Agent 可通过 delegate_task 创建任务。')];
+}
+
+function paneAudit() {
+  return S.audit.length ? S.audit.map((a) => h('div', { class: 'small' },
+    h('span', { class: 'muted' }, time(a.ts) + ' '), h('b', {}, a.actor ? '@' + a.actor : 'system'), ' ', h('code', {}, a.action),
+    h('span', { class: 'muted' }, ' ' + Object.entries(a.detail).map(([k, v]) => `${k}=${v}`).join(' ')),
+  )) : [h('div', { class: 'muted' }, '暂无审计记录')];
+}
+
+// ---------- boot ----------
+if (S.token) login(S.token).catch(() => {}); else renderAuth();
+</script>
+</body>
+</html>
