@@ -4,6 +4,8 @@
 **ContextPackage** 在不同 AI 之间零文件交接工作 —— 例如让 **ChatGPT（消费级）** 把调研交给 **Claude Code** 写 PRD，
 无需手动导出/上传 Markdown。
 
+**第一次使用请看[使用手册](docs/使用手册.md)**；本文件是接口与部署参考。
+
 零依赖：只需 Node.js ≥ 22.13（使用内置 `node:sqlite`）。
 
 ```bash
