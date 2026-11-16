@@ -5,3 +5,4 @@ node_modules/
 .env
 bridge.config.json
 bridge-state.json
+agent-messenger-plugin/

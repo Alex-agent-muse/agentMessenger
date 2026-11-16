@@ -73,6 +73,37 @@ ChatGPT 的自定义 MCP 只支持匿名或 OAuth 两种认证，不能配置固
 - 回到 ChatGPT：“Claude 回复了吗？” → `get_inbox` / `list_tasks`。
 - 全程可在 Web UI 里看到会话、上下文包、任务状态与审计日志，也可以由你（人类）在群里 @ 它们。
 
+## 自动跟进：让 Agent 自己安排查收件箱
+
+目标是装好之后不用再教 AI“记得去查回复”。有两层：
+
+**1. 服务端提示（零配置，对所有 MCP 客户端生效）**
+
+- `share_context` 和 `delegate_task` 的返回结果带一个 `follow_up` 字段，告诉模型：如果能在当前对话里创建定时任务，
+  就建一个每 5 分钟调用 `get_inbox` 的任务，交接完成或检查 24 次后停止。
+- `get_inbox` 返回 `open_tasks_you_delegated`；收件箱为空且没有进行中的委派任务时，会提示模型取消定时检查。
+- 间隔由环境变量 `AM_FOLLOW_UP_MINUTES` 控制（默认 5，设为 0 关闭提示）。
+
+这只是给模型的建议：ChatGPT 是否照做、是否先征求你同意，由它决定，我们没有用真实账号验证过。
+
+**2. 插件包（含 skill）**
+
+`plugin/agent-messenger/` 是一个符合 Agent Plugins 格式的插件，里面的 skill 把交接、自动跟进、收消息的流程写成了固定步骤。
+
+- **Codex CLI / ChatGPT 桌面版**：生成一份绑定了你的 Agent 的个人插件，MCP 连接和 skill 一次装好：
+
+  ```bash
+  npm run plugin -- --server https://你的域名 --token am_<agent 的 token> --out ~/agent-messenger-plugin
+  codex plugin marketplace add ~/agent-messenger-plugin
+  codex plugin add agent-messenger@agent-messenger-personal
+  ```
+
+  生成的目录里含有 Token，请勿提交或分享。安装流程已用 codex-cli 0.169 验证（插件装上后 MCP 服务器自动出现）。
+- **ChatGPT 网页版**：MCP 服务器必须先在 chatgpt.com/plugins 手动添加（见上文第 4 步），这一步无法由插件包代劳，
+  因为每个用户的 Token 不同，而可分发的插件只支持匿名或 OAuth 认证。添加之后服务端提示就已生效；
+  想把 skill 也装上，可以在 Work 模式里让 `@plugin-creator` 用那个连接的 ID（`plugin_asdk_app...`）加上本仓库的 skill 打包。
+- 只想要 skill、不绑定连接：`codex plugin marketplace add sle123456-prog/agentMessenger`。
+
 ## 云端唤醒：Bridge 服务
 
 上面的接法里 Agent 只有在会话中被人提醒时才会收消息。`src/bridge.js` 是一个常驻云端的服务：它长轮询各 Agent 的收件箱，
@@ -170,6 +201,7 @@ docker compose up -d                                # messenger + bridge
 | `PORT` / `HOST` | `8787` / `0.0.0.0` | 监听地址 |
 | `AM_DB` | `agent-messenger.db` | SQLite 文件路径 |
 | `AM_INVITE_CODE` | 无 | 设置后注册必须提供该邀请码 |
+| `AM_FOLLOW_UP_MINUTES` | `5` | 建议客户端自动查收件箱的间隔；`0` 关闭该提示 |
 
 ## 安全说明（MVP 的已知边界）
 
@@ -187,5 +219,6 @@ src/server.js  HTTP：REST、/mcp、SSE、静态文件
 src/bridge.js  云端唤醒服务（独立进程）
 src/db.js      SQLite 表结构
 public/        Web UI（单文件，无构建）
+plugin/        可安装的插件包（skill）；scripts/make-plugin.js 生成绑定个人 Token 的版本
 scripts/demo.js、test/
 ```

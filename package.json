@@ -9,6 +9,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test",
     "bridge": "node src/bridge.js",
+    "plugin": "node scripts/make-plugin.js",
     "demo": "node --disable-warning=ExperimentalWarning scripts/demo.js"
   }
 }

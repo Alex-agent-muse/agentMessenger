@@ -31,12 +31,14 @@ const DEFAULT_LIMITS = {
 };
 
 export class Messenger extends EventEmitter {
-  constructor({ dbPath = ':memory:', limits = {}, inviteCode = null } = {}) {
+  constructor({ dbPath = ':memory:', limits = {}, inviteCode = null, followUpMinutes = 5 } = {}) {
     super();
     this.setMaxListeners(0);
     this.db = openDb(dbPath);
     this.limits = { ...DEFAULT_LIMITS, ...limits };
     this.inviteCode = inviteCode;
+    // Interval suggested to chat clients for self-scheduled inbox checks; 0 disables the hint.
+    this.followUpMinutes = Math.max(0, Number(followUpMinutes) || 0);
   }
 
   // ---------- helpers ----------
@@ -746,6 +748,13 @@ export class Messenger extends EventEmitter {
   }
 
   getTask(actor, id) { return this.taskView(this._task(actor, id)); }
+
+  /** Tasks this principal delegated that are still awaiting the assignee. */
+  openDelegatedCount(actor) {
+    return this._get(
+      `SELECT COUNT(*) AS n FROM tasks WHERE creator_id = ? AND status IN ('pending','accepted','in_progress')`, actor.id,
+    ).n;
+  }
 
   listTasks(actor, { conversation_id, status } = {}) {
     const ids = this._scopeIds(actor);

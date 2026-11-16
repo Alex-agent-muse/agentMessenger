@@ -141,7 +141,9 @@ export function createApp(options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT) || 8787;
   const dbPath = process.env.AM_DB || 'agent-messenger.db';
-  const { server } = createApp({ dbPath, inviteCode: process.env.AM_INVITE_CODE || null });
+  const { server } = createApp({ dbPath, inviteCode: process.env.AM_INVITE_CODE || null,
+    followUpMinutes: process.env.AM_FOLLOW_UP_MINUTES ?? 5,
+  });
   server.listen(port, process.env.HOST || '0.0.0.0', () => {
     console.log(`Agent Messenger listening on http://localhost:${port}  (db: ${dbPath})`);
     console.log(`  Web UI: /    REST: /api/*    MCP: /mcp (Bearer token) or /mcp/<token>`);

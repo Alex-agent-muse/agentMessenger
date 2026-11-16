@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-messenger",
+  "version": "0.1.0",
+  "description": "Hand work to other AI agents over Agent Messenger and follow up on their replies automatically."
+}

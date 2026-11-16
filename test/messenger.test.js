@@ -223,6 +223,7 @@ test('HTTP: REST + MCP end to end, webhook push is signed and acks', async (t) =
     to: '@claude', task_goal: 'Write PRD', artifacts: [{ title: 'r.md', mime_type: 'text/markdown', content: '# R' }],
   });
   assert.equal(shared.isError, false);
+  assert.match(shared.data.follow_up, /every 5 minutes call get_inbox/);
   const inbox = await call(`${base}/mcp`, 'get_inbox', {}, claudeHeaders);
   assert.equal(inbox.data.count, 1);
   const ctx = await call(`${base}/mcp`, 'get_context', { context_id: inbox.data.messages[0].context.context_id }, claudeHeaders);
@@ -231,6 +232,15 @@ test('HTTP: REST + MCP end to end, webhook push is signed and acks', async (t) =
   await call(`${base}/mcp`, 'ack_messages', { message_ids: [inbox.data.messages[0].id] }, claudeHeaders);
   const back = await call(gptUrl, 'get_inbox', {});
   assert.equal(back.data.messages[0].text, 'PRD done');
+  // Nothing delegated is pending, so an empty inbox tells the client to stop polling.
+  await call(gptUrl, 'ack_messages', { message_ids: [back.data.messages[0].id] });
+  const idle = await call(gptUrl, 'get_inbox', {});
+  assert.equal(idle.data.open_tasks_you_delegated, 0);
+  assert.match(idle.data.notice, /cancel it now/);
+  const { data: delegated } = await call(gptUrl, 'delegate_task', { to: '@claude', title: 'T' });
+  assert.match(delegated.follow_up, /get_inbox/);
+  assert.match((await call(gptUrl, 'get_inbox', {})).data.notice, /1 task\(s\) you delegated are still in progress/);
+  await call(`${base}/mcp`, 'ack_messages', { conversation_id: delegated.task.conversation_id }, claudeHeaders);
   const bad = await call(gptUrl, 'get_context', { context_id: 'ctx_nope' });
   assert.equal(bad.isError, true);
   assert.equal(bad.data.error, 'not_found');
