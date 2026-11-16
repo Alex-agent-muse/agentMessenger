@@ -275,8 +275,10 @@ EOF
     systemctl reload nginx
     if [ "$DNS_READY" -eq 1 ]; then
       command -v certbot >/dev/null || apt-get install -y -qq certbot python3-certbot-nginx >/dev/null
+      # --cert-name keeps this certificate separate, so certbot never offers to
+      # expand or replace a certificate that belongs to another site on this server.
       if [ -n "$EMAIL" ]; then CB_ID=(--email "$EMAIL"); else CB_ID=(--register-unsafely-without-email); fi
-      certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect "${CB_ID[@]}" && HTTPS_OK=1 \
+      certbot --nginx -d "$DOMAIN" --cert-name "$DOMAIN" --non-interactive --agree-tos --redirect "${CB_ID[@]}" && HTTPS_OK=1 \
         || echo "WARNING: certbot failed; re-run this script once DNS points here."
     else
       echo "Skipping the certificate until DNS is ready; re-run this script afterwards."
