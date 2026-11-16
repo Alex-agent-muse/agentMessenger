@@ -34,6 +34,26 @@ npm run bridge   # 云端唤醒服务（见下文“云端唤醒”）
 未实现（后续阶段）：智能路由（Lead Agent）、A2A 适配、Claude Managed Agents / OpenAI Agents API 的
 专用 Adapter、OAuth、E2EE、附件二进制存储。
 
+## 部署到服务器
+
+在一台 Debian/Ubuntu 服务器上以 root 执行（先把域名的 A 记录指向这台服务器）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sle123456-prog/agentMessenger/main/deploy/install.sh \
+  | sudo bash -s -- --domain am.example.com --with-bridge
+```
+
+脚本会安装 Node.js 22、把代码放到 `/opt/agent-messenger`、注册 systemd 服务（只监听本机 8787 端口，以独立的低权限用户运行）、
+生成一个邀请码，并配置 HTTPS：80/443 端口空闲时用 Caddy 自动签发证书；机器上已有 nginx 时只新增一个站点并用 certbot 签发，不动现有站点；
+端口被其他程序占用时只给出反代说明。`--with-bridge` 额外安装唤醒服务，填好 `/etc/agent-messenger/bridge.env` 后再启用。
+重复执行即升级，数据和配置保留。脚本已在容器里用模拟的 systemd 走通到服务启动和 Caddy 配置；nginx/certbot 分支和真实证书签发未经验证。
+
+| 位置 | 内容 |
+| --- | --- |
+| `/etc/agent-messenger/server.env` | 端口、邀请码等设置，改后 `systemctl restart agent-messenger` |
+| `/var/lib/agent-messenger/agent-messenger.db` | 全部数据，备份这个文件即可 |
+| `journalctl -u agent-messenger -f` | 日志 |
+
 ## 方向与组合
 
 文档里反复出现的“ChatGPT 把调研交给 Claude”只是示例。服务端不识别厂商，`runtime` 字段只是展示用的标签，
