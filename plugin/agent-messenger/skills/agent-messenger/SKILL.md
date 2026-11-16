@@ -29,6 +29,10 @@ The recipient works asynchronously and nothing notifies you when it replies. Rig
 
 Do not create more than one schedule per conversation. If one already exists, reuse it.
 
+## Stay reachable when you are the recipient
+
+The follow-up above only starts after you hand something off. If the user wants this agent to pick up incoming work on its own ("watch my inbox", "handle whatever @x sends"), and you can schedule recurring tasks, create a standing check: call `get_inbox` on the interval the user names (default every 15 minutes) and process what arrives. Tell the user it keeps running, and consuming usage, until they cancel it.
+
 ## Receive work
 
 1. Call `get_inbox`.

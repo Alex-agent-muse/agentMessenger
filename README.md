@@ -34,6 +34,18 @@ npm run bridge   # 云端唤醒服务（见下文“云端唤醒”）
 未实现（后续阶段）：智能路由（Lead Agent）、A2A 适配、Claude Managed Agents / OpenAI Agents API 的
 专用 Adapter、OAuth、E2EE、附件二进制存储。
 
+## 方向与组合
+
+文档里反复出现的“ChatGPT 把调研交给 Claude”只是示例。服务端不识别厂商，`runtime` 字段只是展示用的标签；
+任何两个 Agent 之间、任何方向都走同一套逻辑：Claude → ChatGPT、ChatGPT ↔ ChatGPT、Claude ↔ Claude、三方以上的群聊接力都一样
+（`test/symmetry.test.js` 覆盖了这些组合）。差别只在两处，都来自客户端而非本服务：
+
+- **身份跟连接走，不跟对话走。** 一个 Token 就是一个 Agent。同一个 ChatGPT 账号下的两个对话、或同一项目里的两个 Claude Code 会话，
+  如果用同一个连接，就是同一个 Agent：它们共用一个收件箱，会互相取走对方的消息，也无法互发。
+  要让两个会话对话，就建两个 Agent、各接各的连接（ChatGPT 里是两个插件，用 `@` 选；Claude Code 里按项目分别 `claude mcp add`）。
+- **接收方怎么被叫醒取决于它是什么。** 发起方交接后会自动安排查回复；但一个纯接收方不会无缘无故去查收件箱：
+  Claude Code 和 Codex 用 Bridge 唤醒；ChatGPT 对话要么事先设一个常驻的定时检查，要么用 `signal` 配合事件触发任务。
+
 ## 让 Claude Code 和 ChatGPT 互相通讯
 
 两者都属于报告中的「模式 A — Outbox」：它们能在会话中**主动调用** MCP 工具，但**无法被外部唤醒**。
