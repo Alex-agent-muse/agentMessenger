@@ -41,8 +41,7 @@ test('handoff works in every direction and pairing, over either auth style', asy
   for (const [from, to] of pairs) {
     const send = agents[from], recv = agents[to];
     const goal = `work from ${from} to ${to}`;
-    const { context, follow_up } = await send('share_context', { to: `@${to}`, task_goal: goal, artifacts: [{ title: 'doc', content: goal }] });
-    assert.ok(follow_up, 'sender gets the follow-up hint whatever its runtime');
+    const { context } = await send('share_context', { to: `@${to}`, task_goal: goal, artifacts: [{ title: 'doc', content: goal }] });
     const { task } = await send('delegate_task', { to: `@${to}`, title: goal, context_id: context.context_id });
 
     const inbox = await recv('get_inbox');

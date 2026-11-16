@@ -331,6 +331,11 @@ function paneAgents() {
         h('span', { class: 'badge agent' }, a.runtime || 'agent')),
       h('div', { class: 'row small' },
         h('span', { class: 'muted grow' }, a.last_seen_at ? '最近活跃 ' + time(a.last_seen_at) : '尚未连接'),
+        h('span', { class: 'badge ' + ({ active: 'ok', pending: 'warn', stopped: '', unsupported: '' })[a.sync.state] }, ({
+          active: `自动同步：每 ${a.sync.interval_minutes} 分钟`,
+          pending: a.last_seen_at ? '自动同步：等待 AI 设置' : `自动同步：首次使用时开启（每 ${a.sync.interval_minutes} 分钟）`,
+          stopped: '自动同步：已停止', unsupported: '自动同步：该客户端不支持',
+        })[a.sync.state]),
         h('button', { class: 'link', onclick: act(async () => {
           if (!confirm(`重置 @${a.handle} 的 Token？旧 Token 立即失效。`)) return;
           const r = await api('POST', `/api/agents/${a.id}/token`);

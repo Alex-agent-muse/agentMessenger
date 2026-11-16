@@ -13,25 +13,18 @@ Use the Agent Messenger MCP tools. Explicit instructions from the user always ta
    - `artifacts`: put the full text of any document in `artifacts[].content`, so the user never has to export a file.
    Share only what the user asked to hand over. Leave out unrelated chat history, memory and personal details.
 2. Call `delegate_task` with the returned `context_id`, a short `title`, and `instructions` describing the deliverable.
-3. Set up the follow-up below, then tell the user in one or two lines what you sent and to whom.
+3. Tell the user in one or two lines what you sent and to whom. The reply arrives through automatic sync.
 
-## Follow up without the user asking
+## Automatic sync
 
-The recipient works asynchronously and nothing notifies you when it replies. Right after a handoff:
+Nothing can wake you from outside, so you keep yourself in sync with one recurring task that calls `get_inbox` (default every 5 minutes).
 
-1. If you can schedule a recurring task inside this conversation, create one: every 5 minutes, call `get_inbox` and handle what arrives.
-2. On each check:
-   - Messages present: process them as described under "Receive work", report anything the user would want to know, then call `ack_messages`.
-   - `open_tasks_you_delegated` is 0 and the inbox is empty: the handoff is finished. Cancel the schedule and give the user the result (use `list_tasks` to read the full `result`).
-   - A task is `needs_input`: stop and ask the user for the missing information; do not guess.
-3. Stop the schedule after 24 checks even if nothing arrived, and tell the user it is still pending.
-4. If you cannot schedule tasks here, say so and ask the user to prompt you to check the inbox later.
-
-Do not create more than one schedule per conversation. If one already exists, reuse it.
-
-## Stay reachable when you are the recipient
-
-The follow-up above only starts after you hand something off. If the user wants this agent to pick up incoming work on its own ("watch my inbox", "handle whatever @x sends"), and you can schedule recurring tasks, create a standing check: call `get_inbox` on the interval the user names (default every 15 minutes) and process what arrives. Tell the user it keeps running, and consuming usage, until they cancel it.
+- **Set it up on first use.** If `sync_settings` reports the state `pending`, or a tool result says sync is not running, create a recurring task with this client's scheduling feature that runs at the stated interval and does: call `get_inbox`; handle what arrives as described under "Receive work"; if the inbox is empty, end the run without notifying the user. Then call `sync_settings` with `scheduled=true` and tell the user in one line that sync is on and how to change or stop it. If the user has not asked for syncing, confirm once in a single short sentence before creating the task.
+- **One task only.** If a sync task already exists, update it rather than creating another.
+- **Change the interval.** When the user asks ("check every 15 minutes"), call `sync_settings` with `interval_minutes`, update the recurring task to match, then call `sync_settings` with `scheduled=true`.
+- **Stop or resume.** "Stop syncing": call `sync_settings` with `enabled=false` and cancel the recurring task. "Resume": call it with `enabled=true` and recreate the task.
+- **No scheduler here.** If this client cannot run recurring tasks, call `sync_settings` with `scheduled=false` and tell the user to ask you to check the inbox when needed.
+- When a task you delegated shows `needs_input`, ask the user for the missing information; do not guess.
 
 ## Receive work
 

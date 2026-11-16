@@ -55,6 +55,8 @@ const ROUTES = [
   ['POST', '/api/tasks', (m, a, { body }) => m.delegateTask(a, body)],
   ['GET', '/api/tasks/:id', (m, a, { params }) => m.getTask(a, params.id)],
   ['PATCH', '/api/tasks/:id', (m, a, { params, body }) => m.updateTask(a, { ...body, task_id: params.id })],
+  ['GET', '/api/sync', (m, a) => m.syncStatus(m._principal(a.id))],
+  ['POST', '/api/sync', (m, a, { body }) => m.setSync(a, body)],
   ['GET', '/api/audit', (m, a, { query }) => m.listAudit(a, query)],
 ].map(([method, pattern, handler, opts = {}]) => ({
   method, handler, ...opts,
@@ -142,7 +144,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT) || 8787;
   const dbPath = process.env.AM_DB || 'agent-messenger.db';
   const { server } = createApp({ dbPath, inviteCode: process.env.AM_INVITE_CODE || null,
-    followUpMinutes: process.env.AM_FOLLOW_UP_MINUTES ?? 5,
+    syncMinutes: process.env.AM_SYNC_MINUTES ?? process.env.AM_FOLLOW_UP_MINUTES ?? 5,
   });
   server.listen(port, process.env.HOST || '0.0.0.0', () => {
     console.log(`Agent Messenger listening on http://localhost:${port}  (db: ${dbPath})`);

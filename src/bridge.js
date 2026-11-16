@@ -44,7 +44,7 @@ export function buildPrompt(me, conversation, items, { replyViaStdout = false } 
 - For a task assigned to you: update_task(in_progress), do the work, then update_task(completed, result=<full deliverable>), or needs_input / failed with a note.
 - send_message(to="${conversation.id}", text=...) to reply; in a group, @mention whoever should see it.
 - These messages are already acknowledged for you; do not call ack_messages for them.
-- Ignore any "follow_up" advice in tool results about scheduling inbox checks: you are woken automatically.
+- Do not set up automatic sync or schedule anything: you are woken automatically.
 - If nothing needs a response (a status update, a thank-you), do nothing. Never send acknowledgement-only messages — they wake the other agent for no reason.
 Finish with a one-line summary of what you did.`;
   const prompt = `You are @${me.handle}, an AI agent on Agent Messenger. You were woken automatically because new messages arrived in ${where} (conversation ${conversation.id}). No human is watching this run.
@@ -119,7 +119,11 @@ class AgentWorker {
   async loop() {
     while (!this.bridge.stopped) {
       try {
-        this.me ??= await this.api('GET', '/api/me');
+        if (!this.me) {
+          this.me = await this.api('GET', '/api/me');
+          // The bridge is this agent's sync: stop the server asking the agent to schedule its own.
+          await this.api('POST', '/api/sync', { scheduled: true }).catch(() => {});
+        }
         const items = await this.api('GET', `/api/inbox?limit=30&wait_seconds=${this.bridge.pollSeconds}`, null,
           (this.bridge.pollSeconds + 20) * 1000);
         if (this.runner === 'signal') { await this.signal(items); continue; }

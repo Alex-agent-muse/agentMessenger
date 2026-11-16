@@ -31,14 +31,14 @@ const DEFAULT_LIMITS = {
 };
 
 export class Messenger extends EventEmitter {
-  constructor({ dbPath = ':memory:', limits = {}, inviteCode = null, followUpMinutes = 5 } = {}) {
+  constructor({ dbPath = ':memory:', limits = {}, inviteCode = null, syncMinutes = 5 } = {}) {
     super();
     this.setMaxListeners(0);
     this.db = openDb(dbPath);
     this.limits = { ...DEFAULT_LIMITS, ...limits };
     this.inviteCode = inviteCode;
-    // Interval suggested to chat clients for self-scheduled inbox checks; 0 disables the hint.
-    this.followUpMinutes = Math.max(0, Number(followUpMinutes) || 0);
+    // Default interval for the inbox sync each client schedules for itself; 0 turns auto-sync off.
+    this.syncMinutes = Math.min(1440, Math.max(0, Math.round(Number(syncMinutes)) || 0));
   }
 
   // ---------- helpers ----------
@@ -82,6 +82,7 @@ export class Messenger extends EventEmitter {
       id: p.id, kind: p.kind, handle: p.handle, display_name: p.display_name,
       owner_handle: owner?.handle ?? null, runtime: p.runtime, description: p.description,
       has_webhook: !!p.webhook_url, last_seen_at: p.last_seen_at,
+      sync: p.kind === 'agent' ? this.syncStatus(p) : undefined,
     };
   }
 
@@ -506,8 +507,52 @@ export class Messenger extends EventEmitter {
     return rows.map((m) => this.messageView(m));
   }
 
+  // ---------- automatic sync ----------
+  // Nothing can wake a chat client from outside, so each client schedules its own
+  // recurring inbox check. The server keeps the desired interval and whether the
+  // client reported the schedule as set up, and notices when checks stop arriving.
+  //   pending      no schedule yet (or it lapsed): the client is asked to create one
+  //   active       client confirmed the schedule and checks keep arriving
+  //   stopped      the user turned sync off
+  //   unsupported  the client said it cannot schedule recurring tasks
+  syncStatus(p) {
+    const interval = p.sync_minutes ?? this.syncMinutes;
+    let state = interval ? p.sync_state : 'stopped';
+    if (state === 'active') {
+      const grace = Math.max(interval * 3, 15) * 60_000;
+      if (!p.last_inbox_at || Date.now() - Date.parse(p.last_inbox_at) > grace) state = 'pending';
+    }
+    return { state, interval_minutes: interval, last_sync_at: p.last_inbox_at ?? null };
+  }
+
+  setSync(actor, { interval_minutes, enabled, scheduled } = {}) {
+    let p = this._principal(actor.id);
+    let { sync_minutes: minutes, sync_state: state } = p;
+    if (interval_minutes !== undefined && interval_minutes !== null) {
+      const n = Math.round(Number(interval_minutes));
+      if (!Number.isFinite(n) || n < 1 || n > 1440) throw err('invalid', 'interval_minutes must be between 1 and 1440');
+      if (n !== (minutes ?? this.syncMinutes)) state = 'pending'; // the client must reschedule
+      minutes = n;
+      if (state === 'stopped') state = 'pending';
+    }
+    if (enabled === false) state = 'stopped';
+    if (enabled === true && ['stopped', 'unsupported'].includes(state)) {
+      state = 'pending';
+      if (minutes === 0) minutes = null;
+    }
+    if (scheduled === true && state !== 'stopped') state = 'active';
+    if (scheduled === false) state = 'unsupported';
+    this._run('UPDATE principals SET sync_minutes = ?, sync_state = ?, last_inbox_at = CASE WHEN ? THEN ? ELSE last_inbox_at END WHERE id = ?',
+      minutes ?? null, state, scheduled === true ? 1 : 0, now(), p.id);
+    this.audit(actor, 'sync.updated', p.id, { state, interval_minutes: minutes ?? this.syncMinutes });
+    this.emit('activity', { audience: new Set([this._ownerId(p)]) });
+    p = this._principal(p.id);
+    return this.syncStatus(p);
+  }
+
   // ---------- reliable inbox: at-least-once until acked ----------
   getInbox(actor, { limit = 20 } = {}) {
+    this._run('UPDATE principals SET last_inbox_at = ? WHERE id = ?', now(), actor.id);
     limit = Math.min(Math.max(Number(limit) || 20, 1), 100);
     const rows = this._all(
       `SELECT m.*, d.reason, d.attempts FROM deliveries d JOIN messages m ON m.id = d.message_id

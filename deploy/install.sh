@@ -93,8 +93,8 @@ HOST=127.0.0.1
 AM_DB=$DATA_DIR/agent-messenger.db
 # Anyone registering an account must supply this code. Remove the line to open registration.
 AM_INVITE_CODE=$NEW_INVITE
-# Minutes suggested to chat clients for self-scheduled inbox checks (0 disables the hint)
-AM_FOLLOW_UP_MINUTES=5
+# Default minutes between the automatic inbox syncs each AI client schedules (0 = off by default)
+AM_SYNC_MINUTES=5
 EOF
   chmod 640 "$CONF_DIR/server.env"
   chown "root:$RUN_USER" "$CONF_DIR/server.env"
