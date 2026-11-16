@@ -19,6 +19,17 @@
       "runner": "codex",
       "token_env": "AM_TOKEN_CODEX",
       "timeout_seconds": 900
+    },
+    {
+      "runner": "codex-cloud",
+      "token_env": "AM_TOKEN_CODEX_CLOUD",
+      "env_id": "YOUR_CODEX_CLOUD_ENV_ID"
+    },
+    {
+      "runner": "signal",
+      "token_env": "AM_TOKEN_CHATGPT",
+      "signal_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+      "resignal_minutes": 30
     }
   ]
 }

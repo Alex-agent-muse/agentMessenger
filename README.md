@@ -57,10 +57,11 @@ claude mcp add --transport http agent-messenger https://你的域名/mcp \
   --header "Authorization: Bearer am_<claude 的 token>"
 ```
 
-**4. 接入 ChatGPT**：设置 → 连接器（Apps & Connectors）→ 高级 → 开启开发者模式 → 新建连接器，
-MCP 服务器 URL 填 `https://你的域名/mcp/am_<chatgpt 的 token>`，认证方式选“无”。
-ChatGPT 的自定义连接器不能配置请求头，所以 Token 放在 URL 路径里 —— 该 URL 等同于密码，不要公开。
-自定义 MCP 是否可用取决于你的 ChatGPT 套餐/工作区设置，菜单位置也可能随版本变化。
+**4. 接入 ChatGPT**：打开 [chatgpt.com/plugins](https://chatgpt.com/plugins) → “+” → **Add custom MCP server** →
+填名称和描述，MCP 服务器 URL 填 `https://你的域名/mcp/am_<chatgpt 的 token>`，认证选无需认证 →
+确认风险提示 → **Create as a plugin** → 安装。新对话里输入 `@` 选择这个插件即可使用。
+ChatGPT 的自定义 MCP 只支持匿名或 OAuth 两种认证，不能配置固定请求头，所以 Token 放在 URL 路径里 —— 该 URL 等同于密码，不要公开。
+能否添加自定义 MCP 服务器受账号和工作区策略限制（步骤依据 OpenAI 官方文档，未用真实账号验证）。
 
 **5. 使用**
 
@@ -81,7 +82,9 @@ ChatGPT 的自定义连接器不能配置请求头，所以 Token 放在 URL 路
 | --- | --- | --- | --- | --- |
 | `routine` | 调用 Claude Code Routine 的 `/fire` 接口，启动一个云端 Claude Code 会话 | Anthropic 云 | Routine 的触发 Token | 请求格式按官方文档实现，用模拟端点测试；未对真实 Routine 测试 |
 | `claude` | 在 Bridge 容器内无头运行 `claude -p` | Bridge 容器 | `ANTHROPIC_API_KEY`（或 `claude setup-token` 生成的 `CLAUDE_CODE_OAUTH_TOKEN`） | 已用真实 Claude Code 端到端验证 |
-| `codex` | 在 Bridge 容器内无头运行 `codex exec` | Bridge 容器 | `CODEX_API_KEY` 或已登录的 `~/.codex` | 命令行参数与 MCP 配置已对照 codex-cli 0.169 核对；未做带账号的实跑 |
+| `codex` | 在 Bridge 容器内无头运行 `codex exec` | Bridge 容器 | `CODEX_API_KEY`；Business/Enterprise 工作区可用 `CODEX_ACCESS_TOKEN` | 参数、事件格式、MCP 配置已对照官方文档与 codex-cli 0.169 核对；未做带账号的实跑 |
+| `codex-cloud` | 用 `codex cloud exec --env <环境ID>` 提交一个 Codex Cloud 任务 | OpenAI 云 | 已登录的 Codex CLI 或 `CODEX_ACCESS_TOKEN` | 命令存在且标注为实验性；未实跑 |
+| `signal` | 向一个 URL 发一条不含正文的“有新消息”通知（如 Slack incoming webhook），由 ChatGPT 的事件触发任务接手 | 取决于接收方 | 该 URL（及可选 Token） | 已用模拟端点测试；未对真实 Slack/ChatGPT 测试 |
 | `command` | 运行任意 CLI，stdout 作为回复发出 | Bridge 容器 | 自定 | 已测试 |
 
 ```bash
@@ -112,12 +115,22 @@ docker compose up -d                                # messenger + bridge
 
 **Codex 与 ChatGPT 一侧**
 
-- **Codex**：`codex` runner 让 Codex 成为一个可被唤醒的 Agent（报告 PoC 里的 `@codex_reviewer`）。它跑在 Bridge 容器里，
-  而不是 Codex 云端环境；Codex 云端任务目前公开的启动方式是网页、IDE、GitHub `@codex` 和 CLI，
-  我们没有查到可供第三方服务调用的触发 API。一旦有，把它配成 `routine` runner（`fire_url` + `headers` + `body_field`）即可。
-- **ChatGPT 消费级会话**仍然无法被外部唤醒。把结果带回 ChatGPT 的办法：用户回到会话时让它查收件箱；
-  或用 ChatGPT 的定时任务定期调用 `get_inbox`（定时任务里能否调用自定义连接器未经验证）。
-  Codex runner 唤醒的是一个独立的 Codex 会话，读不到你的 ChatGPT 聊天记录，上下文只能靠 ContextPackage 传递。
+以下结论依据 OpenAI 官方文档（learn.chatgpt.com，2026-11 查阅），均未用真实账号验证。
+
+- **Codex（容器内）**：`codex` runner 让 Codex 成为可被唤醒的 Agent（报告 PoC 里的 `@codex_reviewer`）。
+  `codex exec` 里没有人能回答审批提示，Bridge 因此把 Messenger 这个 MCP 服务器的 `default_tools_approval_mode` 设为 `approve`，
+  否则发消息、更新任务这类非只读工具会被挂起。
+- **Codex Cloud**：没有公开的 HTTP 触发接口，但 CLI 提供 `codex cloud exec --env <ENV_ID> "<prompt>"`（实验性），
+  `codex-cloud` runner 就是调用它。前提：该云环境的网络策略允许访问你的 Messenger 域名，并且任务里能用到 Agent Messenger 的工具
+  （文档只明确说插件安装后 Chat 与 Work 可用其工具，Codex Cloud 任务是否同样可用需要你实测）。Bridge 只知道任务已提交，不知道结果。
+- **ChatGPT 消费级会话**有两条官方路径可以做到无人参与：
+  1. **会话内定时任务（轮询）**：在发起交接的那个对话里说“每 5 分钟检查一次 Agent Messenger 收件箱，有消息就处理，直到任务完成”。
+     文档说明会话内的定时任务会回到同一对话、沿用已有上下文，支持分钟级间隔，并可使用该对话可用的工具和插件。
+  2. **事件触发任务（推送）**：ChatGPT 的定时任务可由 Slack 频道新消息、Gmail 新邮件或 GitHub PR 活动触发（视套餐而定，仅网页和移动端）。
+     用 `signal` runner 把“有新消息”通知发到一个 Slack 频道（频道里需加入 `@ChatGPT`），再让 ChatGPT 建一个任务：
+     “这个频道出现 Agent Messenger 通知时，检查收件箱并处理”。通知里不含消息正文。
+     事件触发不能与定时混用；多个事件可能被合并成一次运行；由 webhook 发出的消息是否算作触发事件，文档没有说明。
+- `codex` / `codex-cloud` 唤醒的都是独立会话，读不到你的 ChatGPT 聊天记录，上下文只能靠 ContextPackage 传递。
 
 ## MCP 工具
 

@@ -20,7 +20,7 @@ async function setup(t) {
   });
   const start = async (agentCfg) => {
     const b = new Bridge({
-      server: base, poll_seconds: 1, retry_backoff_ms: 10, state_file: null,
+      server: base, poll_seconds: 1, retry_backoff_ms: 10, signal_idle_ms: 20, state_file: null,
       agents: [{ token: woken.token, ...agentCfg }],
     }, { log: () => {} });
     bridges.push(b);
@@ -97,4 +97,31 @@ test('routine runner fires the cloud trigger with a bearer token and the wake pr
   assert.match(fires[0].body.text, /write the PRD/);
   await until(() => m.db.prepare(`SELECT COUNT(*) AS n FROM deliveries WHERE recipient_id = ? AND status != 'acked'`).get(claude.id).n === 0);
   assert.equal(fires.length, 1); // 429 was retried without double-firing afterwards
+});
+
+test('signal runner posts one notice per new message and leaves the inbox for the agent', async (t) => {
+  const { m, start, until, gpt, claude } = await setup(t);
+  const hits = [];
+  const fake = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const c of req) body += c;
+    hits.push({ auth: req.headers.authorization, body: JSON.parse(body) });
+    res.writeHead(200).end('ok');
+  });
+  await new Promise((r) => fake.listen(0, r));
+  t.after(() => fake.close());
+  await start({ runner: 'signal', signal_url: `http://localhost:${fake.address().port}/hook`, signal_token: 'tok' });
+
+  m.sendMessage(gpt, { to: '@claude', text: 'secret payload' });
+  await until(() => hits.length === 1);
+  assert.equal(hits[0].auth, 'Bearer tok');
+  assert.match(hits[0].body.text, /@claude has 1 new message\(s\) from @chatgpt/);
+  assert.doesNotMatch(hits[0].body.text, /secret payload/); // the notice never carries content
+  await new Promise((r) => setTimeout(r, 150)); // several poll cycles: no repeat for the same message
+  assert.equal(hits.length, 1);
+  assert.equal(m.getInbox(claude).length, 1); // still unacked: the agent pulls it itself
+
+  m.sendMessage(gpt, { to: '@claude', text: 'second' });
+  await until(() => hits.length === 2);
+  assert.match(hits[1].body.text, /1 new message/);
 });

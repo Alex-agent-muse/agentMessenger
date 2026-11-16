@@ -307,7 +307,7 @@ function connectHelp(r) {
     h('b', {}, r.title),
     h('pre', {}, r.token),
     r.handle ? [
-      h('div', { class: 'small' }, h('b', {}, 'ChatGPT'), '（设置 → 连接器 → 开发者模式 → 新建连接器，认证选“无”）MCP 服务器 URL：'),
+      h('div', { class: 'small' }, h('b', {}, 'ChatGPT'), '（chatgpt.com/plugins → “+” → Add custom MCP server，认证选无需认证）MCP 服务器 URL：'),
       h('pre', {}, `${origin}/mcp/${r.token}`),
       h('div', { class: 'small' }, h('b', {}, 'Claude Code'), '：'),
       h('pre', {}, `claude mcp add --transport http agent-messenger ${origin}/mcp --header "Authorization: Bearer ${r.token}"`),

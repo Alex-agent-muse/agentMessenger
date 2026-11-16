@@ -5,9 +5,13 @@
 //
 // Runners:
 //   claude   run Claude Code headless (`claude -p`) in this container
-//   codex    run Codex headless (`codex exec`) in this container
-//   routine  fire a cloud trigger over HTTP (e.g. a Claude Code routine's /fire URL)
-//   command  run any CLI; its stdout is posted as the reply
+//   codex        run Codex headless (`codex exec`) in this container
+//   codex-cloud  submit a Codex Cloud task (`codex cloud exec --env ...`)
+//   routine      fire a cloud trigger over HTTP (e.g. a Claude Code routine's /fire URL)
+//   signal       post a short "you have mail" notice to a URL (e.g. a Slack incoming
+//                webhook that a ChatGPT event-triggered task watches); the agent then
+//                pulls and acks its inbox itself
+//   command      run any CLI; its stdout is posted as the reply
 //
 // The bridge is the inbox consumer: it hands the messages to the runtime inside
 // the wake prompt and acks them once the runtime accepted the work. The woken
@@ -86,9 +90,13 @@ class AgentWorker {
     this.token = cfg.token || process.env[cfg.token_env];
     if (!this.token) throw new Error(`agent config needs "token" or a set "token_env" (${cfg.token_env ?? 'missing'})`);
     this.runner = cfg.runner;
-    if (!['claude', 'codex', 'routine', 'command'].includes(this.runner)) throw new Error(`unknown runner: ${this.runner}`);
+    if (!['claude', 'codex', 'codex-cloud', 'routine', 'signal', 'command'].includes(this.runner)) throw new Error(`unknown runner: ${this.runner}`);
     if (this.runner === 'command' && !Array.isArray(cfg.command)) throw new Error('command runner needs "command": [argv...]');
     if (this.runner === 'routine' && !cfg.fire_url) throw new Error('routine runner needs "fire_url"');
+    if (this.runner === 'signal' && !cfg.signal_url) throw new Error('signal runner needs "signal_url"');
+    if (this.runner === 'codex-cloud' && !cfg.env_id) throw new Error('codex-cloud runner needs "env_id"');
+    this.resignalMs = (cfg.resignal_minutes ?? 30) * 60_000;
+    this.signaled = new Map(); // message id -> time we last signalled for it
     this.timeoutMs = (cfg.timeout_seconds ?? 900) * 1000;
     this.maxAttempts = cfg.max_attempts ?? 3;
     this.attempts = new Map();
@@ -113,6 +121,7 @@ class AgentWorker {
         this.me ??= await this.api('GET', '/api/me');
         const items = await this.api('GET', `/api/inbox?limit=30&wait_seconds=${this.bridge.pollSeconds}`, null,
           (this.bridge.pollSeconds + 20) * 1000);
+        if (this.runner === 'signal') { await this.signal(items); continue; }
         const byConv = new Map();
         for (const m of items) byConv.set(m.conversation_id, [...(byConv.get(m.conversation_id) ?? []), m]);
         for (const [convId, group] of byConv) {
@@ -125,6 +134,35 @@ class AgentWorker {
         await sleep(this.bridge.backoffMs);
       }
     }
+  }
+
+  /**
+   * Signal mode: tell an agent that cannot be woken directly (consumer ChatGPT) that it
+   * has mail, through a channel its own event-triggered task watches. Messages are NOT
+   * acked here — the agent pulls and acks them with get_inbox.
+   */
+  async signal(items) {
+    const now = Date.now();
+    const ids = new Set(items.map((m) => m.id));
+    for (const id of this.signaled.keys()) if (!ids.has(id)) this.signaled.delete(id); // acked meanwhile
+    const fresh = items.filter((m) => now - (this.signaled.get(m.id) ?? 0) >= this.resignalMs);
+    if (fresh.length) {
+      const senders = [...new Set(fresh.map((m) => `@${m.sender.handle}`))].join(', ');
+      const text = (this.cfg.signal_text
+        || 'Agent Messenger: @{handle} has {count} new message(s) from {senders}. Check the Agent Messenger inbox and handle them.')
+        .replaceAll('{handle}', this.me.handle).replaceAll('{count}', String(fresh.length)).replaceAll('{senders}', senders);
+      const token = this.cfg.signal_token || process.env[this.cfg.signal_token_env];
+      const res = await fetch(this.cfg.signal_url, {
+        method: 'POST', signal: AbortSignal.timeout(30_000),
+        headers: { 'content-type': 'application/json', ...(token && { authorization: `Bearer ${token}` }), ...this.cfg.headers },
+        body: JSON.stringify({ [this.cfg.body_field || 'text']: text }),
+      });
+      if (!res.ok) throw new Error(`signal failed: HTTP ${res.status}`);
+      for (const m of fresh) this.signaled.set(m.id, now);
+      this.log(`signalled for ${fresh.length} message(s)`);
+    }
+    // Unacked messages make the long-poll return at once; pause so we do not spin.
+    if (items.length) await sleep(this.bridge.idleMs);
   }
 
   async handle(convId, items) {
@@ -206,7 +244,10 @@ class AgentWorker {
     if (this.runner === 'codex') {
       const args = ['exec', ...(resume ? ['resume', resume] : []), '--json', '--skip-git-repo-check',
         '-c', `mcp_servers.agent_messenger.url="${this.bridge.server}/mcp"`,
-        '-c', 'mcp_servers.agent_messenger.bearer_token_env_var="AM_AGENT_TOKEN"'];
+        '-c', 'mcp_servers.agent_messenger.bearer_token_env_var="AM_AGENT_TOKEN"',
+        // Nobody can answer approval prompts in exec mode; without this, tools not
+        // marked read-only (send_message, update_task, ...) would be held for approval.
+        '-c', 'mcp_servers.agent_messenger.default_tools_approval_mode="approve"'];
       if (this.cfg.model) args.push('-m', this.cfg.model);
       args.push(...(this.cfg.extra_args ?? []), '-'); // "-" = read the prompt from stdin
       let out;
@@ -220,6 +261,17 @@ class AgentWorker {
       }
       await remember(sid);
       return { text, info: sid ? `thread ${sid}` : '' };
+    }
+
+    if (this.runner === 'codex-cloud') {
+      // The task runs on OpenAI's side; the environment must be able to reach this
+      // server and have the Agent Messenger tools available. We only learn that the
+      // task was accepted, not its outcome.
+      const args = ['cloud', 'exec', '--env', this.cfg.env_id];
+      if (this.cfg.branch) args.push('--branch', this.cfg.branch);
+      args.push(...(this.cfg.extra_args ?? []), prompt);
+      const out = await runProcess(this.cfg.bin || 'codex', args, { ...opts, input: '' });
+      return { text: null, info: out.trim().split('\n').at(-1)?.slice(0, 200) || 'submitted' };
     }
 
     if (this.runner === 'routine') {
@@ -254,6 +306,7 @@ export class Bridge {
     this.server = config.server.replace(/\/+$/, '');
     this.pollSeconds = config.poll_seconds ?? 50;
     this.backoffMs = config.retry_backoff_ms ?? 5000;
+    this.idleMs = config.signal_idle_ms ?? 15_000;
     this.statePath = config.state_file ?? 'bridge-state.json';
     this.workDir = config.work_dir || process.cwd();
     this.log = log;
