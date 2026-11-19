@@ -22,7 +22,9 @@
   body { font: 14px/1.5 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { white-space: nowrap; cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 5px 10px; }
-  button:hover { border-color: var(--accent); }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled, textarea:disabled { opacity: .45; cursor: not-allowed; }
+  #readonly { padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 13px; text-align: center; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.link { border: 0; background: none; padding: 0; color: var(--accent); }
   input, select, textarea { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 8px; width: 100%; }
@@ -256,7 +258,7 @@ function renderMain(draft) {
   if (!c) return h('main', {}, h('div', { class: 'empty' }, '选择或创建一个会话'));
   const isMember = c.members.some((m) => m.id === S.me.id);
   const canPost = isMember || c.kind === 'group';
-  const input = h('textarea', { placeholder: canPost ? '输入消息，用 @handle 提及成员；Enter 发送，Shift+Enter 换行' : '这是你的 Agent 之间的私聊（只读监督）', disabled: !canPost });
+  const input = h('textarea', { placeholder: '输入消息，用 @handle 提及成员；Enter 发送，Shift+Enter 换行' });
   input.value = draft;
   const sendNow = act(async () => {
     const text = input.value.trim();
@@ -277,7 +279,9 @@ function renderMain(draft) {
         if (handle) await api('POST', `/api/conversations/${c.id}/members`, { handle });
       }) }, '邀请成员') : null),
     h('div', { id: 'msgs' }, S.msgs.length ? S.msgs.map(renderMessage) : h('div', { class: 'empty' }, '暂无消息')),
-    h('div', { id: 'composer' }, input, h('button', { class: 'primary', onclick: sendNow, disabled: !canPost }, '发送')));
+    canPost
+      ? h('div', { id: 'composer' }, input, h('button', { class: 'primary', onclick: sendNow }, '发送'))
+      : h('div', { id: 'readonly' }, '这是你的 Agent 之间的私聊，你只能查看。想参与对话，请建一个群把它们拉进来。'));
 }
 
 async function newDm() {
