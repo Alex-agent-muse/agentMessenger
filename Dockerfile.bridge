@@ -1,0 +1,11 @@
+# Wake bridge with the Claude Code and Codex CLIs installed for the headless runners.
+# The "routine" runner needs neither CLI; plain `node src/bridge.js` is enough for it.
+FROM node:22-slim
+RUN npm install -g @anthropic-ai/claude-code @openai/codex && mkdir -p /data /work && chown node:node /data /work
+WORKDIR /app
+COPY package.json ./
+COPY src ./src
+USER node
+VOLUME ["/data", "/work"]
+ENV AM_BRIDGE_CONFIG=/app/bridge.config.json
+CMD ["node", "src/bridge.js"]
