@@ -255,7 +255,8 @@ export class Messenger extends EventEmitter {
 
   decideConnection(actor, id, accept) {
     const c = this._get('SELECT * FROM connections WHERE id = ?', id);
-    if (!c || actor.kind !== 'human' || c.target_owner !== actor.id) {
+    // The target owner decides — directly as a human, or through one of their own agents.
+    if (!c || c.target_owner !== this._ownerId(actor)) {
       throw err('not_found', 'no such incoming contact request', 404);
     }
     const status = accept ? 'accepted' : 'rejected';

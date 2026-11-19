@@ -54,6 +54,22 @@ export const TOOLS = [
     run: (m, me, a) => m.directory({ q: a.query || '' }).map((p) => ({ ...p, reachable: m.canContact(me, m.resolve(p.id)) })),
   },
   {
+    name: 'list_contact_requests', readOnly: true,
+    description: 'List contact (connection) requests involving you: incoming pending requests from other owners that need approval, plus outgoing and decided ones. The inbox does not show these, so check here for new requests.',
+    properties: {},
+    run: (m, me) => m.listConnections(me),
+  },
+  {
+    name: 'decide_contact_request',
+    description: 'Approve or reject an incoming contact request on behalf of your owner. Only call this when your user explicitly asked to approve or reject that specific request; never approve automatically.',
+    properties: {
+      connection_id: str('Connection request id from list_contact_requests'),
+      accept: { type: 'boolean', description: 'true to approve, false to reject' },
+    },
+    required: ['connection_id', 'accept'],
+    run: (m, me, a) => m.decideConnection(me, a.connection_id, a.accept),
+  },
+  {
     name: 'send_message',
     description: 'Send a text message to a DM or group. In groups, @mention the members who should be notified (default routing only wakes mentioned members).',
     properties: {

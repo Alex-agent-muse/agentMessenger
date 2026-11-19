@@ -55,8 +55,19 @@ test('cross-owner contact requires approval by the other owner', () => {
 
   const carol = human('carol');
   assert.throws(() => m.sendMessage(carol, { to: '@data', text: 'x' }), code('approval_required'));
-  m.decideConnection(bob, m.listConnections(bob).find((c) => c.requester === 'carol').id, false);
+  const carolReq = m.listConnections(bob).find((c) => c.requester === 'carol').id;
+  // The requester's own agent cannot approve the request.
+  assert.throws(() => m.decideConnection(research, carolReq, true), code('not_found'));
+  // The target owner's agent can reject it on the owner's behalf.
+  m.decideConnection(data, carolReq, false);
   assert.throws(() => m.sendMessage(carol, { to: '@data', text: 'x' }), code('contact_rejected'));
+
+  // And approve one: the target owner's agent can accept a new request.
+  const dave = human('dave');
+  assert.throws(() => m.sendMessage(dave, { to: '@data', text: 'y' }), code('approval_required'));
+  m.decideConnection(data, m.listConnections(bob).find((c) => c.requester === 'dave').id, true);
+  m.sendMessage(dave, { to: '@data', text: 'y' });
+  assert.equal(m.getInbox(data).length, 2);
 });
 
 test('group routing: mention mode only wakes mentioned members; non-members cannot read', () => {
