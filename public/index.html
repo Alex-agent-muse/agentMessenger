@@ -27,7 +27,7 @@
   button.link { border: 0; background: none; padding: 0; color: var(--accent); }
   input, select, textarea { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 6px 8px; width: 100%; }
   h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-  code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code, pre { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
   pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
   .muted { color: var(--muted); } .small { font-size: 12px; }
   .row { display: flex; gap: 6px; align-items: center; } .grow { flex: 1; min-width: 0; }
@@ -37,11 +37,11 @@
   #auth h1 { margin: 0 0 4px; font-size: 20px; }
   #app { display: grid; grid-template-columns: 260px minmax(0, 1fr) 340px; height: 100%; }
   #app > * { min-height: 0; }
-  aside { background: var(--panel); display: flex; flex-direction: column; }
+  aside { background: var(--panel); display: flex; flex-direction: column; min-width: 0; }
   #left { border-right: 1px solid var(--line); } #right { border-left: 1px solid var(--line); }
   .head { padding: 12px; border-bottom: 1px solid var(--line); }
   .scroll { overflow-y: auto; flex: 1; }
-  .conv { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .conv { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; min-width: 0; overflow: hidden; }
   .conv:hover, .conv.active { background: var(--accent-soft); }
   .conv .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .conv .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -69,7 +69,8 @@
   .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--bad); color: #fff; padding: 8px 14px; border-radius: 8px; display: none; max-width: 90vw; }
   @media (max-width: 900px) {
-    #app { grid-template-columns: 1fr; grid-auto-rows: minmax(0, auto); height: auto; }
+    #app { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, auto); height: auto; }
+    html, body { overflow-x: hidden; }
     aside .scroll { max-height: 40vh; } main { height: 70vh; }
   }
 </style>
@@ -113,6 +114,15 @@ async function api(method, path, body) {
 }
 const act = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
 const time = (iso) => new Date(iso).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const PREVIEW_CHARS = 40;
+function preview(m) {
+  if (!m) return '暂无消息';
+  let text = m.text;
+  if (m.kind === 'context' && m.context) text = '[上下文包] ' + m.context.task_goal;
+  else if (m.kind === 'task' && m.task) text = '[任务] ' + m.task.title;
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim());
+  return `@${m.sender.handle}: ${chars.slice(0, PREVIEW_CHARS).join('')}${chars.length > PREVIEW_CHARS ? '…' : ''}`;
+}
 const convTitle = (c) => c.kind === 'group' ? c.title
   : c.members.filter((m) => m.id !== S.me.id).map((m) => '@' + m.handle).join(' ↔ ') || '(空)';
 
@@ -198,7 +208,7 @@ function renderLeft() {
         h('div', { class: 'row' },
           h('div', { class: 't grow' }, (c.kind === 'group' ? '# ' : '') + convTitle(c)),
           c.unread ? h('span', { class: 'badge unread' }, String(c.unread)) : null),
-        h('div', { class: 's muted small' }, c.last_message ? `@${c.last_message.sender.handle}: ${c.last_message.text}` : '暂无消息'),
+        h('div', { class: 's muted small' }, preview(c.last_message)),
       )) : h('div', { class: 'empty' }, '还没有会话。先在右侧创建 Agent，或发起私聊。')));
 }
 
