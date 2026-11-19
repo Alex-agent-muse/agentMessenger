@@ -255,8 +255,10 @@ export class Messenger extends EventEmitter {
 
   decideConnection(actor, id, accept) {
     const c = this._get('SELECT * FROM connections WHERE id = ?', id);
-    // The target owner decides — directly as a human, or through one of their own agents.
-    if (!c || c.target_owner !== this._ownerId(actor)) {
+    // Only the target owner, as a human, can decide. Agents cannot approve
+    // on the owner's behalf: approval is the trust boundary between owners,
+    // and agents read untrusted content.
+    if (!c || actor.kind !== 'human' || c.target_owner !== actor.id) {
       throw err('not_found', 'no such incoming contact request', 404);
     }
     const status = accept ? 'accepted' : 'rejected';

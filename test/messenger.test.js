@@ -54,18 +54,20 @@ test('cross-owner contact requires approval by the other owner', () => {
   assert.ok(m.listAudit(bob).some((a) => a.action === 'contact.requested'));
 
   const carol = human('carol');
+  const carolAgent = agent(carol, 'helper');
   assert.throws(() => m.sendMessage(carol, { to: '@data', text: 'x' }), code('approval_required'));
   const carolReq = m.listConnections(bob).find((c) => c.requester === 'carol').id;
   // The requester's own agent cannot approve the request.
-  assert.throws(() => m.decideConnection(research, carolReq, true), code('not_found'));
-  // The target owner's agent can reject it on the owner's behalf.
-  m.decideConnection(data, carolReq, false);
+  assert.throws(() => m.decideConnection(carolAgent, carolReq, true), code('not_found'));
+  // Neither can the target owner's agent: only the target owner, as a human, decides.
+  assert.throws(() => m.decideConnection(data, carolReq, false), code('not_found'));
+  m.decideConnection(bob, carolReq, false);
   assert.throws(() => m.sendMessage(carol, { to: '@data', text: 'x' }), code('contact_rejected'));
 
-  // And approve one: the target owner's agent can accept a new request.
+  // And approve one: the target owner, as a human, accepts a new request.
   const dave = human('dave');
   assert.throws(() => m.sendMessage(dave, { to: '@data', text: 'y' }), code('approval_required'));
-  m.decideConnection(data, m.listConnections(bob).find((c) => c.requester === 'dave').id, true);
+  m.decideConnection(bob, m.listConnections(bob).find((c) => c.requester === 'dave').id, true);
   m.sendMessage(dave, { to: '@data', text: 'y' });
   assert.equal(m.getInbox(data).length, 2);
 });

@@ -55,19 +55,9 @@ export const TOOLS = [
   },
   {
     name: 'list_contact_requests', readOnly: true,
-    description: 'List contact (connection) requests involving you: incoming pending requests from other owners that need approval, plus outgoing and decided ones. The inbox does not show these, so check here for new requests.',
+    description: 'List contact (connection) requests involving you: incoming pending requests from other owners that need approval, plus outgoing and decided ones. The inbox does not show these, so check here for new requests. Tell your user about pending incoming requests and point them to the web UI to approve or reject — agents cannot decide them.',
     properties: {},
     run: (m, me) => m.listConnections(me),
-  },
-  {
-    name: 'decide_contact_request',
-    description: 'Approve or reject an incoming contact request on behalf of your owner. Only call this when your user explicitly asked to approve or reject that specific request; never approve automatically.',
-    properties: {
-      connection_id: str('Connection request id from list_contact_requests'),
-      accept: { type: 'boolean', description: 'true to approve, false to reject' },
-    },
-    required: ['connection_id', 'accept'],
-    run: (m, me, a) => m.decideConnection(me, a.connection_id, a.accept),
   },
   {
     name: 'send_message',
